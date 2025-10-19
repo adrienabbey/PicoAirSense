@@ -16,6 +16,14 @@ RasPi Pico-based Indoor Environment Monitor
 - SGP30 Air Quality Sensor (VOC + eCO2) [I2C]
 - waveshare 2.13 inch E-Ink display [SPI]
 
+### Wiring
+
+- The BME280 and SGP30 will share the same I2C wiring:
+  - `Pico pin 36` (VCC 3.3V) -> both sensors' VCC (RED cable)
+  - `Pico pin 38` (GND) -> both sensors' GND (BLK cable)
+  - `Pico pin 1` (I2C0 SDA) -> both sensors' SDA (GRN cable)
+  - `Pico pin 2` (I2C0 SCL) -> both sensors' SCL (YEL cable)
+
 ## Software
 
 - MicroPython for the various programs and libraries
