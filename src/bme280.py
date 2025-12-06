@@ -39,4 +39,18 @@ from machine import I2C  # type: ignore
 class BME280:
     def __init__(self, i2c: I2C, address: int = 0x76) -> None:
         self.i2c = i2c
-        self.addr = address  # Note: this is 0x76 by default for the BME280 sensor
+        self.address = address  # Note: this is 0x76 by default for the BME280 sensor
+
+        # Verify the chip ID
+        chip_id = self._read_u8(0xD0)
+        if chip_id not in (0x60,):
+            raise RuntimeError(
+                "The BME280 was not found, or wrong chip ID was given: 0x{:02X}".format(chip_id))
+
+    def _read_u8(self, reg):
+        """
+        Reads one unsigned 8-bit value from the specified device register.
+        
+        :param reg: The register address on the device to read from.
+        """
+        return int.from_bytes(self.i2c.readfrom_mem(self.address, reg, 1), "big")
