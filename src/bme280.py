@@ -47,10 +47,44 @@ class BME280:
             raise RuntimeError(
                 "The BME280 was not found, or wrong chip ID was given: 0x{:02X}".format(chip_id))
 
+        # Read calibration data:
+        self._read_calibration_data()
+
+        # Configure oversampling / mode registers
+        self._configure()
+
     def _read_u8(self, reg):
         """
         Reads one unsigned 8-bit value from the specified device register.
-        
+
         :param reg: The register address on the device to read from.
         """
         return int.from_bytes(self.i2c.readfrom_mem(self.address, reg, 1), "big")
+
+    def _read_s16(self, reg):
+        data = self.i2c.readfrom_mem(self.address, reg, 2)
+        val = int.from_bytes(data, "little", signed=True)
+        return val
+
+    def _read_calibration_data(self):
+        # TODO: implement according to BME280 datasheet
+        # Read blocks of registers into attributes like self.dig_T1, dig_T2, ...
+        pass
+
+    def _configure(self):
+        # TODO: write config / ctrl_hum / ctrl_meas registers
+        pass
+
+    def read_raw(self):
+        # TODO: read raw temperature, pressure, humidity registers
+        # Return (adc_T, adc_P, adc_H)
+        pass
+
+    def read(self):
+        """
+        Returns (temperature_C, pressure_Pa, humidity_percent)
+        """
+        adc_T, adc_P, adc_H = self.read_raw()
+        # TODO: apply compensation formulas from datasheet
+        # Use self.dig_T1, dig_T2, ... to compute true readings
+        return (temperature_C, pressure_Pa, humidity_percent)
