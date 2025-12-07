@@ -59,6 +59,9 @@
 #   if value & 0x800 : This will do a bitwise AND between the given value and the hex value 0x800
 #       This translates to '1000 0000 0000' in binary.  In other words, if the 12th bit is 1,
 #       this will return True (non-zero value).
+#
+# TODO: Consider adjusting to allow the user to 'reset' and reconfigure to switch between different
+#   sensor modes, etc.
 
 
 from machine import I2C  # type: ignore
@@ -66,27 +69,45 @@ from machine import I2C  # type: ignore
 
 class BME280:
 
-    # Define the addresses for the configuration values to be written to:
+    # Define register addresses:
     CTRL_HUM = 0xF2
+    STATUS = 0xF3
     CTRL_MEAS = 0xF4
     CONFIG = 0xF5
+    DATA = 0xF7
+
+    # Mode bit patterns:
+    MODE_SLEEP = 0b00
+    MODE_FORCED = 0b01
+    MODE_NORMAL = 0b11
 
     def __init__(self, i2c: I2C, address: int = 0x76, spi3w_en: int = 0,
                  osrs_t: int = 0b001, osrs_p: int = 0b001, osrs_h: int = 0b001,
                  filter_coef: int = 0b000, t_sb: int = 0b000, mode: int = 0b00) -> None:
         self.i2c = i2c
         self.address = address          # Note: this is 0x76 by default for the BME280 sensor
-        self.spi3w_en = spi3w_en        # If enabled, use 3-wire SPI, otherwise use I2C
+
+        # Normalize configuration fields to valid ranges.
+        # If enabled, use 3-wire SPI, otherwise use I2C:
+        self.spi3w_en = 1 if spi3w_en else 0    # Only 1 or 0.
         # Temperature oversampling value (0, x1, x2, x4, x8, x16):
-        self.osrs_t = osrs_t
+        self.osrs_t = osrs_t & 0x07  # 3 bits
         # Pressure oversampling value (0, x1, x2, x4, x8, x16):
-        self.osrs_p = osrs_p
+        self.osrs_p = osrs_p & 0x07
         # Humidity oversampling value (0, x1, x2, x4, x8, x16):
-        self.osrs_h = osrs_h
+        self.osrs_h = osrs_h & 0x07
         # IIR filter coefficient (0, 2, 4, 8, 16):
-        self.filter_coef = filter_coef
-        self.t_sb = t_sb                # Standby time (for normal mode)
-        self.mode = mode                # Mode (sleep, forced, normal)
+        self.filter_coef = filter_coef & 0x07
+        # Standby time (for normal mode):
+        self.t_sb = t_sb & 0x07
+
+        # There's three possible modes, with four possible bit values:
+        if mode == self.MODE_SLEEP:
+            self._mode = self.MODE_SLEEP
+        elif mode == self.MODE_NORMAL:
+            self._mode = self.MODE_NORMAL
+        else:   # Assume that any other inputs are forced mode:
+            self._mode = self.MODE_FORCED
 
         # Verify the chip ID
         chip_id = self._read_u8(0xD0)
@@ -281,14 +302,16 @@ class BME280:
 
         # Finally, configure temp/press oversampling and sensor mode:
         ctrl_meas = ((self.osrs_t & 0x07) << 5) | (
-            (self.osrs_p & 0x07) << 2) | (self.mode & 0x03)  # See comments above
+            (self.osrs_p & 0x07) << 2) | (self._mode & 0x03)  # See comments above
         self.i2c.writeto_mem(self.address, self.CTRL_MEAS, bytes([ctrl_meas]))
 
-    def read_raw(self):
+    def read_raw(self) -> tuple[int, int, int]:
         # TODO: read raw temperature, pressure, humidity registers
         # Return (adc_T, adc_P, adc_H)
         # NOTE: Be mindful of whether this is in forced or normal mode!
-        pass
+
+        # Ensure there is fresh data available:
+        if
 
     def read(self):
         """
