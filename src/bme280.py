@@ -13,12 +13,13 @@
 #   RESET       0xE0    Soft Reset          Write 0xB6 to initiate a full reset
 #   CTRL_HUM    0xF2    Humidity Control    Controls oversampling for humidity.
 #                                           Must be written before CTRL_MEAS to take effect.
+#                                           '001' for oversampling x1
 #   STATUS      0xF3    Status              Bit 3 (measuring) is '1' when conversion is running.
 #                                           Bit 0 (im_update) is '1'f when NVM memory is copying.
 #   CTRL_MEAS   0xF4    Measurement Control Controls pressure/temp oversampling and power mode.
-#                                           (Sleep=00, Forced=01, Normal=11)
+#                                           '00100101' for temp x1, press x1, forced mode
 #   CONFIG      0xF5    Configuration       Controls standby time (in Normal mode) and IIR filter
-#                                           settings.
+#                                           settings.  '11100000' for filter off
 #
 # Data Registers:
 #   NOTE: It's recommended to perform a burst read of all registers (0xF7 to 0xFE) in one operation
@@ -31,6 +32,18 @@
 #   NOTE: XLSB: Extended Least-Significant Byte.  Standard registers are 8-bits, but the sensors
 #       provide 20-bits of precision.  Thus this extends an additional 4-bits into the the XLSB
 #       registers (bits 7:4).
+#   NOTE: If I'm using x1 oversampling with IIR filtering off, while my data is effectively 16-bit
+#       (the XLSB bits have little value), I still need to treat it as a 20-bit value.
+#
+# Weather Monitoring Recommendations:
+#   Sensor mode: forced mode, 1 sample / minute
+#   Oversampling settings: pressure x1, temperature x1, humidity x1
+#   IIR filter settings: filter off
+#   NOTE: This is quite fine for my intended purposes.
+#
+# Compensation formulas:
+#   This information can be found starting on page 25 of the official Bosch BME280 data sheet.
+#   Trimming parameter registers for calibration are available on page 24.
 
 
 from machine import I2C  # type: ignore
