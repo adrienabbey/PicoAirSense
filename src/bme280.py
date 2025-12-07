@@ -65,6 +65,12 @@ from machine import I2C  # type: ignore
 
 
 class BME280:
+
+    # Define the addresses for the configuration values to be written to:
+    CTRL_HUM = 0xF2
+    CTRL_MEAS = 0xF4
+    CONFIG = 0xF5
+
     def __init__(self, i2c: I2C, address: int = 0x76, spi3w_en: int = 0,
                  osrs_t: int = 0b001, osrs_p: int = 0b001, osrs_h: int = 0b001,
                  filter_coef: int = 0b000, t_sb: int = 0b000, mode: int = 0b00) -> None:
@@ -216,20 +222,14 @@ class BME280:
         return b - 0x100 if b & 0x80 else b  # Sign if needed
 
     def _configure(self):
-        # TODO: write config / ctrl_hum / ctrl_meas registers
-        # This function configures oversampling, filter.
-        #   Sensor mode: sleep, forced, or normal
-        #   Temperature, pressure, and humidity oversampling
-        #   Standby time (only for normal mode)
-        #   IIR filter coefficient
-        #   Enable 3-wire SPI (disabled for I2C)
-        #   NOTE: Humidity oversampling changes only take effect after writing to 'ctrl_meas'
-        #   NOTE: Writes to 'config' may be ignored in normal mode, guaranteed in sleep mode
+        """
+        Configures the device according to provided values.  This includes the sensor mode, 
+        oversampling, standby time (normal mode only), IIR filter coefficient, and I2C / 3-wire SPI
+        interfaces.
+        """
 
-        # Define the addresses for the configuration values to be written to:
-        CTRL_HUM = 0xF2
-        CTRL_MEAS = 0xF4
-        CONFIG = 0xF5
+        # NOTE: Humidity oversampling changes only take effect after writing to 'ctrl_meas'
+        # NOTE: Writes to 'config' may be ignored in normal mode, guaranteed in sleep mode
 
         # ctrl_hum: 0xF2
         #   This controls oversampling of humidity data.  See below for values.
@@ -270,22 +270,19 @@ class BME280:
         #       011                 8                   based on previous measurements.
         #       100, others        16
 
-        # NOTE: I've updated the class init to allow the above settings to be specified, with
-        #   defaults appropriate for my assignment.
-
         # Configure the humidity oversampling (ctrl_hum) first:
         ctrl_hum = self.osrs_h & 0x07   # bits 2:0
-        self.i2c.writeto_mem(self.address, CTRL_HUM, bytes([ctrl_hum]))
+        self.i2c.writeto_mem(self.address, self.CTRL_HUM, bytes([ctrl_hum]))
 
-        # Configure standby time, filter, and SPI mode next:
+        # Configure standby time, IIR filtering, and SPI/I2C next:
         config = ((self.t_sb & 0x07) << 5) | (
             (self.filter_coef & 0x07) << 2) | self.spi3w_en  # See comments above
-        self.i2c.writeto_mem(self.address, CONFIG, bytes([config]))
+        self.i2c.writeto_mem(self.address, self.CONFIG, bytes([config]))
 
-        # Finally, configure oversampling and mode:
+        # Finally, configure temp/press oversampling and sensor mode:
         ctrl_meas = ((self.osrs_t & 0x07) << 5) | (
             (self.osrs_p & 0x07) << 2) | (self.mode & 0x03)  # See comments above
-        self.i2c.writeto_mem(self.address, CTRL_MEAS, bytes([ctrl_meas]))
+        self.i2c.writeto_mem(self.address, self.CTRL_MEAS, bytes([ctrl_meas]))
 
     def read_raw(self):
         # TODO: read raw temperature, pressure, humidity registers
