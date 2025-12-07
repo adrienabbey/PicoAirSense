@@ -1,6 +1,9 @@
 # bme280.py - A simple MicroPython driver for the BME280 sensor.
 # Adrien Abbey, Nov. 2025
 #
+# NOTE: Much of this is based on guidance from ChatGPT.  No code was copy/pasted, and all work
+#   is done while being mindful of staying within academic integrity standards.
+#
 # Assumes the use of the I2C interface
 # 1. Reads the calibration registers
 # 2. Configures the device
@@ -44,6 +47,14 @@
 # Compensation formulas:
 #   This information can be found starting on page 25 of the official Bosch BME280 data sheet.
 #   Trimming parameter registers for calibration are available on page 24.
+#
+# Bitwise functionality:
+#   (e4 << 4) : This will do a bit-shift of e4 4-bits left.
+#   (e5 & 0x0F) : Bitwise AND.  This will set the first four bits of e5 to zero.  0x0F = '0000 1111'
+#   (e4 << 4) | (e5 & 0x0F) : This will bitwise OR the above two into a single 12-bit value.
+#   if value & 0x800 : This will do a bitwise AND between the given value and the hex value 0x800
+#       This translates to '1000 0000 0000' in binary.  In other words, if the 12th bit is 1,
+#       this will return True (non-zero value).
 
 
 from machine import I2C  # type: ignore
@@ -79,10 +90,111 @@ class BME280:
         val = int.from_bytes(data, "little", signed=True)
         return val
 
-    def _read_calibration_data(self):
-        # TODO: implement according to BME280 datasheet
+    def _read_calibration_data(self) -> None:
+        # TODO: implement according to BME280 data sheet
         # Read blocks of registers into attributes like self.dig_T1, dig_T2, ...
-        pass
+
+        # From the official BME280 data sheet:
+        #   0x88 / 0x89         dig_T1 [7:0] / [15:8]   unsigned short
+        #   0x8A / 0x8B         dig_T2 [7:0] / [15:8]   signed short
+        #   0x8C / 0x8D         dig_T3 [7:0] / [15:8]   signed short
+        #   0x8E / 0x8F         dig_P1 [7:0] / [15:8]   unsigned short
+        #   0x90 / 0x91         dig_P2 [7:0] / [15:8]   signed short
+        #   0x92 / 0x93         dig_P3 [7:0] / [15:8]   signed short
+        #   0x94 / 0x95         dig_P4 [7:0] / [15:8]   signed short
+        #   0x96 / 0x97         dig_P5 [7:0] / [15:8]   signed short
+        #   0x98 / 0x99         dig_P6 [7:0] / [15:8]   signed short
+        #   0x9A / 0x9B         dig_P7 [7:0] / [15:8]   signed short
+        #   0x9C / 0x9D         dig_P8 [7:0] / [15:8]   signed short
+        #   0x9E / 0x9F         dig_P9 [7:0] / [15:8]   signed short
+        #   0xA1                dig_H1 [7:0]            unsigned char
+        #   0xE1 / 0xE2         dig_H2 [7:0] / [15:8]   signed short
+        #   0xE3                dig_H3 [7:0]            unsigned char
+        #   0xE4 / 0xE5[3:0]    dig_H4 [11:4] / [3:0]   signed short
+        #   0xE5[7:4] / 0xE6    dig_H5 [3:0] / [11:4]   signed short
+        #   0xE7                dig_H6                  signed char
+
+        # Read the temperature and pressure calibration values in a large block:
+        tp_buf = self.i2c.readfrom_mem(self.address, 0x88, 26)
+        # buf1[0] = 0x88, buf1[1] = 0x89, ... buf1[23] = 0x9F
+
+        # Temperature values:
+        self.dig_T1 = self._u16_le(tp_buf[0], tp_buf[1])    # unsigned  short
+        self.dig_T2 = self._s16_le(tp_buf[2], tp_buf[3])    # signed    short
+        self.dig_T3 = self._s16_le(tp_buf[4], tp_buf[5])    # signed    short
+
+        # Pressure values:
+        self.dig_P1 = self._u16_le(tp_buf[6], tp_buf[7])    # unsigned  short
+        self.dig_P2 = self._s16_le(tp_buf[8], tp_buf[9])    # signed    short
+        self.dig_P3 = self._s16_le(tp_buf[10], tp_buf[11])  # signed    short
+        self.dig_P4 = self._s16_le(tp_buf[12], tp_buf[13])  # signed    short
+        self.dig_P5 = self._s16_le(tp_buf[14], tp_buf[15])  # signed    short
+        self.dig_P6 = self._s16_le(tp_buf[16], tp_buf[17])  # signed    short
+        self.dig_P7 = self._s16_le(tp_buf[18], tp_buf[19])  # signed    short
+        self.dig_P8 = self._s16_le(tp_buf[20], tp_buf[21])  # signed    short
+        self.dig_P9 = self._s16_le(tp_buf[22], tp_buf[23])  # signed    short
+
+        # Humidity values (incomplete):
+        self.dig_H1 = tp_buf[25]                            # unsigned  char
+
+        # Humidity calibration gets complicated, as some values are packed.
+        # Read the humidity calibration values in a large block:
+        h_buf = self.i2c.readfrom_mem(self.address, 0xE1, 7)
+        # buf2[0] = 0xE1, ..., buf2[6] = 0xE7
+
+        # Humidity values (easy):
+        self.dig_H2 = self._s16_le(h_buf[0], h_buf[1])      # signed    short
+        self.dig_H3 = h_buf[2]                              # unsigned  char
+
+        # The following values require some assembly:
+        e4 = h_buf[3]   # 0xE4
+        e5 = h_buf[4]   # 0xE5
+        e6 = h_buf[5]   # 0xE6
+
+        # Shift 0xE4 left 4 bits [11:4] with E5[3:0] before combining:
+        raw_h4 = (e4 << 4) | (e5 & 0x0F)
+        # Sign-extend the 12-bit signed to a Python int:
+        if raw_h4 & 0x800:  # If the 12th bit is 1:
+            raw_h4 -= 1 << 12
+        self.dig_H4 = raw_h4                                # signed    short
+
+        # Shift 0xE6 left 4 bits and 0xE5 left 4 bits before combining:
+        raw_h5 = (e6 << 4) | (e5 >> 4)
+        # Sign-extend the 12-bit signed into a Python int:
+        if raw_h5 & 0x800:  # If the 12th bit is 1:
+            raw_h5 -= 1 << 12
+        self.dig_H5 = raw_h5                                # signed    short
+
+        # Finally, H6 needs to assembly:
+        self.dig_H6 = self._s8(h_buf[6])                    # signed    char
+
+    ###
+    # The following functions are necessary to convert raw register values into usable integers.
+    ###
+
+    @staticmethod
+    def _u16_le(low: int, high: int) -> int:
+        """
+        Combine two bytes (little-endian) into an unsigned 16-bit int.
+        """
+        return low | (high << 8)  # Bit-shifts the high value and then combines the two values.
+
+    @staticmethod
+    def _s16_le(low: int, high: int) -> int:
+        """
+        Combine two bytes into a signed 16-bit int (two's complement).
+        """
+        value = low | (high << 8)
+        if value & 0x8000:  # check the sign bit
+            value -= 0x100000
+        return value
+
+    @staticmethod
+    def _s8(b: int) -> int:
+        """
+        Interpret one byte as a signed 8-bit value.
+        """
+        return b - 0x100 if b & 0x80 else b
 
     def _configure(self):
         # TODO: write config / ctrl_hum / ctrl_meas registers
@@ -98,6 +210,6 @@ class BME280:
         Returns (temperature_C, pressure_Pa, humidity_percent)
         """
         adc_T, adc_P, adc_H = self.read_raw()
-        # TODO: apply compensation formulas from datasheet
+        # TODO: apply compensation formulas from data sheet
         # Use self.dig_T1, dig_T2, ... to compute true readings
         return (temperature_C, pressure_Pa, humidity_percent)
