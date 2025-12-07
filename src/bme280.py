@@ -169,7 +169,9 @@ class BME280:
         self.dig_H6 = self._s8(h_buf[6])                    # signed    char
 
     ###
-    # The following functions are necessary to convert raw register values into usable integers.
+    # These helper functions are necessary to convert raw register values into usable integers.
+    #   @staticmethod allows for the helper functions to avoid needing to use 'self', as they don't
+    #       modify any instance attributes.
     ###
 
     @staticmethod
