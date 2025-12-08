@@ -1,12 +1,11 @@
 # PicoAirSense
 
-RasPi Pico-based Indoor Environment Monitor
+Raspberry Pi Pico-based Indoor Environment Monitor
 
 ## The Goal
 
 - Monitor indoor air quality, humidity, temperature, and pressure.
 - Develop skills and experience working with microcontrollers.
-  - Use Fritzing to create wiring schematics.
 - Use a Raspberry Pi Pico 2W, an E-Ink display, and several sensors to do this.
 
 ## Hardware
