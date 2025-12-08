@@ -122,11 +122,6 @@ class BME280:
         """
         return int.from_bytes(self.i2c.readfrom_mem(self.address, reg, 1), "big")
 
-    def _read_s16(self, reg):
-        data = self.i2c.readfrom_mem(self.address, reg, 2)
-        val = int.from_bytes(data, "little", signed=True)
-        return val
-
     def _read_calibration_data(self) -> None:
         # TODO: implement according to BME280 data sheet
         # Read blocks of registers into attributes like self.dig_T1, dig_T2, ...
@@ -153,7 +148,7 @@ class BME280:
 
         # Read the temperature and pressure calibration values in a large block:
         tp_buf = self.i2c.readfrom_mem(self.address, 0x88, 26)
-        # buf1[0] = 0x88, buf1[1] = 0x89, ... buf1[23] = 0x9F
+        # tp_buf[0] = 0x88, tp_buf[1] = 0x89, ... tp_buf[23] = 0x9F
 
         # Temperature values:
         self.dig_T1 = self._u16_le(tp_buf[0], tp_buf[1])    # unsigned  short
@@ -225,7 +220,7 @@ class BME280:
         """
         value = low | (high << 8)
         if value & 0x8000:  # check the sign bit
-            value -= 0x100000
+            value -= 0x10000
         return value
 
     @staticmethod
@@ -235,7 +230,7 @@ class BME280:
         """
         return b - 0x100 if b & 0x80 else b  # Sign if needed
 
-    def _configure(self):
+    def _configure(self) -> None:
         """
         Configures the device according to provided values.  This includes the sensor mode, 
         oversampling, standby time (normal mode only), IIR filter coefficient, and I2C / 3-wire SPI
@@ -333,7 +328,7 @@ class BME280:
                 break
 
             # Sensor still busy, wait before looping:
-            time.sleep(0.001)
+            time.sleep_ms(1)  # type: ignore
 
     def read_raw(self) -> tuple[int, int, int]:
         """
@@ -419,7 +414,7 @@ class BME280:
         """
         Convert raw pressure ADC value to pressure in Pascals
 
-        Implements Bosch's BME280_compensate_P_int64() integer algorithm.
+        Implements Bosch's BME280_compensate_P_int32() integer algorithm.
         Requires self._t_fine to have been set by _compensate_temperature()
         for the same measurement.
         """
@@ -476,7 +471,7 @@ class BME280:
         """
         Convert raw humidity ADC value to %RH.
 
-        Implements Bosch's bme280_compensate_H_in32() integer algorithm.
+        Implements Bosch's bme280_compensate_H_int32() integer algorithm.
         Requires self._t_fine to have been set by _compensate_temperature()
         for the same measurement.
         """
@@ -509,7 +504,9 @@ class BME280:
             v_x1_u32r = 419430400
 
         # return (BME280_U32_t)(v_x1_u32r>>12);
-        return float(v_x1_u32r >> 12)
+        h = (v_x1_u32r >> 12)   # As per instructions.
+        humidity = h / 1024.0   # Need to convert to %RH as a float
+        return humidity
 
     def read(self) -> tuple[float, float, float]:
         """
