@@ -472,6 +472,45 @@ class BME280:
         # Output value of “96386” equals 96386 Pa = 963.86 hPa
         return float(p)
 
+    def _compensate_humidity(self, adc_H: int) -> float:
+        """
+        Convert raw humidity ADC value to %RH.
+
+        Implements Bosch's bme280_compensate_H_in32() integer algorithm.
+        Requires self._t_fine to have been set by _compensate_temperature()
+        for the same measurement.
+        """
+
+        # v_x1_u32r = (t_fine – ((BME280_S32_t)76800));
+        v_x1_u32r = (self._t_fine - 76800)
+
+        # v_x1_u32r = (((((adc_H << 14) – (((BME280_S32_t)dig_H4) << 20) – (((BME280_S32_t)dig_H5) *
+        #   v_x1_u32r)) + ((BME280_S32_t)16384)) >> 15) * (((((((v_x1_u32r *
+        #   ((BME280_S32_t)dig_H6)) >> 10) * (((v_x1_u32r * ((BME280_S32_t)dig_H3)) >> 11) +
+        #   ((BME280_S32_t)32768))) >> 10) + ((BME280_S32_t)2097152)) * ((BME280_S32_t)dig_H2) +
+        #   8192) >> 14));
+        v_x1_u32r = (((((adc_H << 14) - ((self.dig_H4) << 20) - ((self.dig_H5) *
+                                                                 v_x1_u32r)) + (16384)) >> 15) * (((((((v_x1_u32r *
+                                                                                                        (self.dig_H6)) >> 10) * (((v_x1_u32r * (self.dig_H3)) >> 11) +
+                                                                                                                                 (32768))) >> 10) + (2097152)) * (self.dig_H2) +
+                                                                                                   8192) >> 14))
+
+        # v_x1_u32r = (v_x1_u32r – (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) *
+        #   ((BME280_S32_t)dig_H1)) >> 4));
+        v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) *
+                                   (self.dig_H1)) >> 4))
+
+        # v_x1_u32r = (v_x1_u32r < 0 ? 0 : v_x1_u32r);
+        if v_x1_u32r < 0:
+            v_x1_u32r = 0
+
+        # v_x1_u32r = (v_x1_u32r > 419430400 ? 419430400 : v_x1_u32r);
+        if v_x1_u32r > 419430400:
+            v_x1_u32r = 419430400
+
+        # return (BME280_U32_t)(v_x1_u32r>>12);
+        return float(v_x1_u32r >> 12)
+
     def read(self) -> tuple[float, float, float]:
         """
         Returns (temperature_C, pressure_Pa, humidity_percent)
