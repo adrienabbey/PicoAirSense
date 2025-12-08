@@ -415,6 +415,63 @@ class BME280:
         # Return as a float in degrees Celsius:
         return T / 100.0
 
+    def _compensate_pressure(self, adc_P: int) -> float:
+        """
+        Convert raw pressure ADC value to pressure in Pascals
+
+        Implements Bosch's BME280_compensate_P_int64() integer algorithm.
+        Requires self._t_fine to have been set by _compensate_temperature()
+        for the same measurement.
+        """
+
+        # var1 = (((BME280_S32_t)t_fine)>>1) – (BME280_S32_t)64000;
+        var1 = (self._t_fine >> 1) - 64000
+
+        # var2 = (((var1>>2) * (var1>>2)) >> 11 ) * ((BME280_S32_t)dig_P6);
+        var2 = (((var1 >> 2) * (var1 >> 2)) >> 11) * self.dig_P6
+
+        # var2 = var2 + ((var1*((BME280_S32_t)dig_P5))<<1);
+        var2 = var2 + ((var1 * self.dig_P5) << 1)
+
+        # var2 = (var2>>2)+(((BME280_S32_t)dig_P4)<<16);
+        var2 = (var2 >> 2) + (self.dig_P4 << 16)
+
+        # var1 = (((dig_P3 * (((var1>>2) * (var1>>2)) >> 13 ))
+        #   >> 3) + ((((BME280_S32_t)dig_P2) * var1)>>1))>>18;
+        var1 = (((self.dig_P3 * (((var1 >> 2) * (var1 >> 2)) >> 13))
+                >> 3) + ((self.dig_P2 * var1) >> 1)) >> 18
+
+        # var1 =((((32768+var1))*((BME280_S32_t)dig_P1))>>15);
+        var1 = ((((32768 + var1)) * (self.dig_P1)) >> 15)
+
+        # Avoid divide by zero exception:
+        if var1 == 0:
+            return 0
+
+        # p = (((BME280_U32_t)(((BME280_S32_t)1048576)-adc_P)-(var2>>12)))*3125;
+        p = ((1048576 - adc_P) - (var2 >> 12)) * 3125
+
+        # if (p < 0x80000000)
+        if p < 0x80000000:
+            # NOTE: Use // in Python code to use integer division.  Otherwise it becomes float.
+            # p = (p << 1) / ((BME280_U32_t)var1);
+            p = (p << 1) // (var1)
+        else:
+            # p = (p / (BME280_U32_t)var1) * 2;
+            p = (p // var1) * 2
+
+        # var1 = (((BME280_S32_t)dig_P9) * ((BME280_S32_t)(((p>>3) * (p>>3))>>13)))>>12;
+        var1 = (self.dig_P9 * ((((p >> 3) * (p >> 3)) >> 13))) >> 12
+
+        # var2 = (((BME280_S32_t)(p>>2)) * ((BME280_S32_t)dig_P8))>>13;
+        var2 = ((p >> 2) * self.dig_P8) >> 13
+
+        # p = (BME280_U32_t)((BME280_S32_t)p + ((var1 + var2 + dig_P7) >> 4));
+        p = (p + ((var1 + var2 + self.dig_P7) >> 4))
+
+        # Output value of “96386” equals 96386 Pa = 963.86 hPa
+        return float(p)
+
     def read(self) -> tuple[float, float, float]:
         """
         Returns (temperature_C, pressure_Pa, humidity_percent)
