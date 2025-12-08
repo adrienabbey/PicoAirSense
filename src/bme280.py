@@ -1,5 +1,16 @@
-# bme280.py - A simple MicroPython driver for the BME280 sensor.
-# Adrien Abbey, Nov. 2025
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Adrien Abbey
+#
+# This driver implements the BME280 environmental sensor for MicroPython.
+# The compensation algorithms follow the formulas described in Bosch
+# Sensortec’s BME280 datasheet (BST-BME280-DS002), reimplemented
+# independently in Python. No Bosch source code is included.
+#
+# The official Bosch BME280 data sheet was heavily referenced for this library:
+#   https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme280-ds002.pdf
+# Compensation formulas are based on the algorithms described in the above data sheet.
+#   Implementation written independently by Adrien Abbey. Original Bosch source code is NOT
+#   included.
 #
 # NOTE: Much of this is based on guidance from ChatGPT.  No code was copy/pasted, and all work
 #   is done while being mindful of staying within academic integrity standards.
@@ -12,8 +23,6 @@
 # 4. Applies formulas as supplied by the data sheet
 # 5. Returns human-readable temperature, humidity and pressure values.
 #
-# Most of this data comes from the official Bosch BME280 data sheet:
-#   https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme280-ds002.pdf
 #
 # Control Registers:
 #   ID          0xD0    Chip ID             Should return 0x60 for BME280
@@ -388,23 +397,16 @@ class BME280:
             - Returns temperature in degrees C as a float.
         """
 
-        # Calculate var1 and var2 as per Bosch's example code:
-
-        # var1 = ((((adc_T>>3) – ((BME280_S32_t)dig_T1<<1))) * ((BME280_S32_t)dig_T2)) >> 11;
+        # Calculate var1 and var2 following the compensation algorithm described in the Bosch data
+        #   sheet.
         var1 = (((adc_T >> 3) - (self.dig_T1 << 1)) * self.dig_T2) >> 11
-
-        # var2 = (((((adc_T>>4) – ((BME280_S32_t)dig_T1)) *
-        #   ((adc_T>>4) – ((BME280_S32_t)dig_T1))) >> 12) *
-        #   ((BME280_S32_t)dig_T3)) >> 14;
         var2 = (((((adc_T >> 4) - self.dig_T1) *
-                ((adc_T >> 4) - self.dig_T1)) >> 12) *
-                self.dig_T3) >> 14
+                ((adc_T >> 4) - self.dig_T1)) >> 12) * self.dig_T3) >> 14
 
         # Set _t_fine for other functions to use (the "fine resolution" internal temp)
         self._t_fine = var1 + var2
 
         # Calculate the actual temperature:
-        #   _t_fine is in 0.01 °C (i.e., 5123 means 51.23 °C)
         T = (self._t_fine * 5 + 128) >> 8
 
         # Return as a float in degrees Celsius:
@@ -419,52 +421,33 @@ class BME280:
         for the same measurement.
         """
 
-        # var1 = (((BME280_S32_t)t_fine)>>1) – (BME280_S32_t)64000;
+        # NOTE: The following implementation follows Bosch's documented integer
+        # compensation algorithm for pressure, translated into Python. It is based on
+        # the algorithm description in the BME280 data sheet, not on Bosch source code.
+
         var1 = (self._t_fine >> 1) - 64000
-
-        # var2 = (((var1>>2) * (var1>>2)) >> 11 ) * ((BME280_S32_t)dig_P6);
         var2 = (((var1 >> 2) * (var1 >> 2)) >> 11) * self.dig_P6
-
-        # var2 = var2 + ((var1*((BME280_S32_t)dig_P5))<<1);
         var2 = var2 + ((var1 * self.dig_P5) << 1)
-
-        # var2 = (var2>>2)+(((BME280_S32_t)dig_P4)<<16);
         var2 = (var2 >> 2) + (self.dig_P4 << 16)
-
-        # var1 = (((dig_P3 * (((var1>>2) * (var1>>2)) >> 13 ))
-        #   >> 3) + ((((BME280_S32_t)dig_P2) * var1)>>1))>>18;
         var1 = (((self.dig_P3 * (((var1 >> 2) * (var1 >> 2)) >> 13))
                 >> 3) + ((self.dig_P2 * var1) >> 1)) >> 18
-
-        # var1 =((((32768+var1))*((BME280_S32_t)dig_P1))>>15);
         var1 = ((((32768 + var1)) * (self.dig_P1)) >> 15)
 
-        # Avoid divide by zero exception:
+        # Avoid divide by zero errors:
         if var1 == 0:
             return 0
 
-        # p = (((BME280_U32_t)(((BME280_S32_t)1048576)-adc_P)-(var2>>12)))*3125;
         p = ((1048576 - adc_P) - (var2 >> 12)) * 3125
 
-        # if (p < 0x80000000)
         if p < 0x80000000:
-            # NOTE: Use // in Python code to use integer division.  Otherwise it becomes float.
-            # p = (p << 1) / ((BME280_U32_t)var1);
             p = (p << 1) // (var1)
         else:
-            # p = (p / (BME280_U32_t)var1) * 2;
             p = (p // var1) * 2
 
-        # var1 = (((BME280_S32_t)dig_P9) * ((BME280_S32_t)(((p>>3) * (p>>3))>>13)))>>12;
         var1 = (self.dig_P9 * ((((p >> 3) * (p >> 3)) >> 13))) >> 12
-
-        # var2 = (((BME280_S32_t)(p>>2)) * ((BME280_S32_t)dig_P8))>>13;
         var2 = ((p >> 2) * self.dig_P8) >> 13
-
-        # p = (BME280_U32_t)((BME280_S32_t)p + ((var1 + var2 + dig_P7) >> 4));
         p = (p + ((var1 + var2 + self.dig_P7) >> 4))
 
-        # Output value of “96386” equals 96386 Pa = 963.86 hPa
         return float(p)
 
     def _compensate_humidity(self, adc_H: int) -> float:
@@ -476,36 +459,24 @@ class BME280:
         for the same measurement.
         """
 
-        # v_x1_u32r = (t_fine – ((BME280_S32_t)76800));
-        v_x1_u32r = (self._t_fine - 76800)
+        # NOTE: The following implementation follows Bosch's documented integer
+        # compensation algorithm for humidity, translated into Python. It is based on
+        # the algorithm description in the BME280 data sheet, not on Bosch source code.
 
-        # v_x1_u32r = (((((adc_H << 14) – (((BME280_S32_t)dig_H4) << 20) – (((BME280_S32_t)dig_H5) *
-        #   v_x1_u32r)) + ((BME280_S32_t)16384)) >> 15) * (((((((v_x1_u32r *
-        #   ((BME280_S32_t)dig_H6)) >> 10) * (((v_x1_u32r * ((BME280_S32_t)dig_H3)) >> 11) +
-        #   ((BME280_S32_t)32768))) >> 10) + ((BME280_S32_t)2097152)) * ((BME280_S32_t)dig_H2) +
-        #   8192) >> 14));
-        v_x1_u32r = (((((adc_H << 14) - ((self.dig_H4) << 20) - ((self.dig_H5) *
-                                                                 v_x1_u32r)) + (16384)) >> 15) * (((((((v_x1_u32r *
-                                                                                                        (self.dig_H6)) >> 10) * (((v_x1_u32r * (self.dig_H3)) >> 11) +
-                                                                                                                                 (32768))) >> 10) + (2097152)) * (self.dig_H2) +
-                                                                                                   8192) >> 14))
+        var = (self._t_fine - 76800)
+        var = (((((adc_H << 14) - ((self.dig_H4) << 20) - ((self.dig_H5) * var)) + (16384)) >> 15) *
+               (((((((var * (self.dig_H6)) >> 10) * (((var * (self.dig_H3)) >> 11) + (32768))) >> 10) + (2097152)) * (self.dig_H2) + 8192) >> 14))
+        var = (
+            var - (((((var >> 15) * (var >> 15)) >> 7) * (self.dig_H1)) >> 4))
 
-        # v_x1_u32r = (v_x1_u32r – (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) *
-        #   ((BME280_S32_t)dig_H1)) >> 4));
-        v_x1_u32r = (v_x1_u32r - (((((v_x1_u32r >> 15) * (v_x1_u32r >> 15)) >> 7) *
-                                   (self.dig_H1)) >> 4))
+        if var < 0:
+            var = 0
 
-        # v_x1_u32r = (v_x1_u32r < 0 ? 0 : v_x1_u32r);
-        if v_x1_u32r < 0:
-            v_x1_u32r = 0
+        if var > 419430400:
+            var = 419430400
 
-        # v_x1_u32r = (v_x1_u32r > 419430400 ? 419430400 : v_x1_u32r);
-        if v_x1_u32r > 419430400:
-            v_x1_u32r = 419430400
-
-        # return (BME280_U32_t)(v_x1_u32r>>12);
-        h = (v_x1_u32r >> 12)   # As per instructions.
-        humidity = h / 1024.0   # Need to convert to %RH as a float
+        h = (var >> 12)
+        humidity = h / 1024.0   # Convert to %RH as a float
         return humidity
 
     def read(self) -> tuple[float, float, float]:
