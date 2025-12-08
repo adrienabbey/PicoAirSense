@@ -25,6 +25,8 @@ Raspberry Pi Pico-based Indoor Environment Monitor
 
 ### Wiring
 
+> NOTE: the pin numbers below are the *physical* pin numbers on the Raspberry Pi Pico 2W.  These numbers will differ from the pin numbers listed in code, which use GPIO pin numbers instead of physical pin numbers.
+
 - The BME280 and SGP30 will share the same I2C wiring:
   - `Pico pin 36` (VCC 3.3V) -> both sensors' `VCC` (RED)
   - `Pico pin 38` (GND) -> both sensors' `GND` (BLK)
@@ -33,12 +35,12 @@ Raspberry Pi Pico-based Indoor Environment Monitor
 - The Waveshare display will share VCC+GND, but have its own SPI wiring:
   - `Pico pin 36` (VCC 3.3V) -> display `VCC` (GRY)
   - `Pico pin 38` (GND) -> display `GND` (BRN)
-  - `Pico 15` (SPI MOSI) -> display `DIN` (BLU)
-  - `Pico 14` (SPI SCK) -> display `CLK` (YEL)
-  - `Pico 12` (Chip Select) -> display `CS` (ORG)
-  - `Pico 11` (Data/Command) -> display `DC` (GRN)
-  - `Pico 16` (Reset) -> display `RST` (WHT)
-  - `Pico 17` (Busy status) -> display `BUSY` (PUR)
+  - `Pico pin 15` (SPI MOSI) -> display `DIN` (BLU)
+  - `Pico pin 14` (SPI SCK) -> display `CLK` (YEL)
+  - `Pico pin 12` (Chip Select) -> display `CS` (ORG)
+  - `Pico pin 11` (Data/Command) -> display `DC` (GRN)
+  - `Pico pin 16` (Reset) -> display `RST` (WHT)
+  - `Pico pin 17` (Busy status) -> display `BUSY` (PUR)
 
 ## Software
 
