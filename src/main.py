@@ -1,10 +1,12 @@
 # Simple test harness to verify my bme280.py library works.
 # From ChatGPT.  I am NOT intending to keep this code!
 
-from machine import Pin, I2C  # type: ignore
+from machine import Pin, I2C, SPI  # type: ignore
 import time
+import framebuf # type: ignore
 from bme280 import BME280
 import adafruit_sgp30
+import epaper2in13
 
 
 def init_i2c():
@@ -32,7 +34,35 @@ def init_sgp30(i2c):
     return sgp
 
 
+def init_epd():
+    spi = SPI(1, baudrate=2_000_000, polarity=0, phase=0,
+              sck=Pin(10), mosi=Pin(11), miso=None)
+
+    cs = Pin(9)
+    dc = Pin(8)
+    rst = Pin(12)
+    busy = Pin(13)
+
+    epd = epaper2in13.EPD(spi, cs, dc, rst, busy)
+    epd.init()
+
+    buf = bytearray(epd.width * epd.height // 8)
+    fb = framebuf.FrameBuffer(buf, epd.height, epd.width, framebuf.MONO_VLSB)
+
+    return epd, fb, buf
+
+
 def main():
+    epd, fb, buf = init_epd()
+    fb.fill(0)
+    y = 6
+    fb.text("PicoAirSense", 2, y, 0xFFFF)
+    y += 14
+    fb.text("Hello, world!", 2, y, 0xFFFF)
+
+    epd.set_frame_memory(buf, 0, 0, epd.width, epd.height)
+    epd.display_frame()
+
     i2c = init_i2c()
 
     devices = i2c.scan()
