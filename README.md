@@ -53,3 +53,9 @@ print(i2c.scan())
 ```text
 [88, 118]
 ```
+
+## Third Party Code
+
+- SGP30 driver: lib/adafruit_sgp30.py from the alexmrqt/micropython-sgp30 project, originally based on Adafruit’s CircuitPython SGP30 library by Ladyada (Adafruit Industries), licensed under the MIT License.
+  - <https://github.com/alexmrqt/micropython-sgp30>
+  - <https://github.com/adafruit/Adafruit_CircuitPython_SGP30>
