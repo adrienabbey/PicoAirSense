@@ -28,20 +28,6 @@
 #   CONFIG      0xF5    Configuration       Controls standby time (in Normal mode) and IIR filter
 #                                           settings.  '11100000' for filter off
 #
-# Data Registers:
-#   NOTE: It's recommended to perform a burst read of all registers (0xF7 to 0xFE) in one operation
-#       to ensure these values all belong to the same measurement instance.
-#
-#   Pressure: 0xF7 (MSB), 0xF8 (LSB), 0xF9 (XLSB - bits 7:4)
-#   Temperature: 0xFA (MSB), 0xFB (LSB), 0xFC (XLSB - bits 7:4)
-#   Humidity: 0xFD (MSB), 0xFE (LSB)
-#
-#   NOTE: XLSB: Extended Least-Significant Byte.  Standard registers are 8-bits, but the sensors
-#       provide 20-bits of precision.  Thus this extends an additional 4-bits into the the XLSB
-#       registers (bits 7:4).
-#   NOTE: If I'm using x1 oversampling with IIR filtering off, while my data is effectively 16-bit
-#       (the XLSB bits have little value), I still need to treat it as a 20-bit value.
-#
 # Weather Monitoring Recommendations:
 #   Sensor mode: forced mode, 1 sample / minute
 #   Oversampling settings: pressure x1, temperature x1, humidity x1
@@ -60,11 +46,15 @@
 #       This translates to '1000 0000 0000' in binary.  In other words, if the 12th bit is 1,
 #       this will return True (non-zero value).
 #
+# Create a Python venv and install Raspberry Pi Pico 2 MicroPython stubs to validate code better:
+#   pip install -U micropython-rp2-rpi_pico2-stubs
+#
 # TODO: Consider adjusting to allow the user to 'reset' and reconfigure to switch between different
 #   sensor modes, etc.
 
 
 from machine import I2C  # type: ignore
+import time
 
 
 class BME280:
@@ -301,17 +291,95 @@ class BME280:
         self.i2c.writeto_mem(self.address, self.CONFIG, bytes([config]))
 
         # Finally, configure temp/press oversampling and sensor mode:
-        ctrl_meas = ((self.osrs_t & 0x07) << 5) | (
-            (self.osrs_p & 0x07) << 2) | (self._mode & 0x03)  # See comments above
+        ctrl_meas = (self.osrs_t << 5) | (
+            self.osrs_p << 2) | (self._mode)  # See comments above.
         self.i2c.writeto_mem(self.address, self.CTRL_MEAS, bytes([ctrl_meas]))
 
+    def _start_forced_measurement(self) -> None:
+        """
+        Start a single forced measurement using the configured oversampling values.
+
+        After writing this, the BME280 performs exactly one measurement (temp, press, humid as 
+        configured), then automatically returns to sleep mode.
+        """
+
+        # In order to trigger a forced measurement, we simply need to write the appropriate bits
+        #   to CTRL_MEAS, which includes the temperature and pressure oversampling values.
+        # TODO: Consider "remembering" this value, as it's used in both _configure() and here.
+
+        # Finally, configure temp/press oversampling and sensor mode:
+        # Slightly modified from _configure():
+        ctrl_meas = (self.osrs_t << 5) | (
+            self.osrs_p << 2) | (self.MODE_FORCED)
+        self.i2c.writeto_mem(self.address, self.CTRL_MEAS, bytes([ctrl_meas]))
+
+    def _wait_measuring_clear(self) -> None:
+        """
+        Wait until the current measurement (if any) has completed.
+
+        This polls the STATUS register and waits for bit 3 ("measuring") to become 0.
+        """
+
+        while True:
+            # Read one byte from the STATUS register:
+            # The [0] treats the memory read as an array and sets 'status' to the first byte:
+            status = self.i2c.readfrom_mem(self.address, self.STATUS, 1)[0]
+
+            # Check bit 3 (measuring):
+            if (status & 0x08) == 0:
+                break
+
+            # Sensor still busy, wait before looping:
+            time.sleep(0.001)
+
     def read_raw(self) -> tuple[int, int, int]:
-        # TODO: read raw temperature, pressure, humidity registers
-        # Return (adc_T, adc_P, adc_H)
-        # NOTE: Be mindful of whether this is in forced or normal mode!
+        """
+        Returns the raw sensor values (adc_T, adc_P, adc_H) according to the configured mode.
+        """
 
         # Ensure there is fresh data available:
-        if
+        if self._mode in (self.MODE_SLEEP, self.MODE_FORCED):
+            # For sleep or forced modes, trigger a forced measurement now:
+            self._start_forced_measurement()
+            self._wait_measuring_clear()
+        elif self._mode == self.MODE_NORMAL:
+            # In normal mode, the sensor runs regularly.
+            self._wait_measuring_clear()
+        else:
+            # Fallback: treat unknown as forced:
+            self._start_forced_measurement()
+            self._wait_measuring_clear()
+
+        # Data Registers:
+        #   NOTE: It's recommended to perform a burst read of all registers (0xF7 to 0xFE) in one
+        #       operation to ensure these values all belong to the same measurement instance.
+        #
+        #   Pressure: 0xF7 (MSB), 0xF8 (LSB), 0xF9 (XLSB - bits 7:4)
+        #   Temperature: 0xFA (MSB), 0xFB (LSB), 0xFC (XLSB - bits 7:4)
+        #   Humidity: 0xFD (MSB), 0xFE (LSB)
+        #
+        #   NOTE: XLSB: Extended Least-Significant Byte.  Standard registers are 8-bits, but the
+        #       sensors provide 20-bits of precision.  Thus this extends an additional 4-bits into
+        #       the the XLSB registers (bits 7:4).
+        #   NOTE: If I'm using x1 oversampling with IIR filtering off, while my data is effectively
+        #       16-bit (the XLSB bits have little value), I still need to treat it as a 20-bit
+        #       value.
+
+        # Burst-read 8 data bytes representing the raw sensor values:
+        data = self.i2c.readfrom_mem(self.address, self.DATA, 8)
+
+        # Parse the data:
+        press_msb, press_lsb, press_xlsb = data[0], data[1], data[2]
+        temp_msb, temp_lsb, temp_xlsb = data[3], data[4], data[5]
+        hum_msb, hum_lsb = data[6], data[7]
+
+        # Combine the parsed data:
+        adc_P = (press_msb << 12) | (press_lsb << 4) | (press_xlsb >> 4)
+        adc_T = (temp_msb << 12) | (temp_lsb << 4) | (temp_xlsb >> 4)
+        adc_H = (hum_msb << 8) | hum_lsb
+
+        # Return the final raw values:
+        return adc_T, adc_P, adc_H
 
     def read(self):
         """
