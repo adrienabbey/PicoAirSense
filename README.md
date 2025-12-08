@@ -2,6 +2,14 @@
 
 Raspberry Pi Pico-based Indoor Environment Monitor
 
+## TODO
+
+- Add the e-ink display
+- Write proper `main.py`
+- Pass BME280 data to SGP80 for compensation
+- Save SGP80 calibration data for long-term stability
+- Documentation
+
 ## The Goal
 
 - Monitor indoor air quality, humidity, temperature, and pressure.
