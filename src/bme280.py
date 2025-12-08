@@ -99,6 +99,9 @@ class BME280:
         else:   # Assume that any other inputs are forced mode:
             self._mode = self.MODE_FORCED
 
+        # Set the _t_fine value (set by temperature readings, used by pressure/humidity):
+        self._t_fine = 0
+
         # Verify the chip ID
         chip_id = self._read_u8(0xD0)
         if chip_id not in (0x60,):
@@ -381,11 +384,50 @@ class BME280:
         # Return the final raw values:
         return adc_T, adc_P, adc_H
 
-    def read(self):
+    def _compensate_temperature(self, adc_T: int) -> float:
+        """
+        Convert raw temperature ADC value to degrees Celsius.
+
+        This implements Bosch's BME280_compensate_T_int32() routine:
+            - Updates self._t_fine for use by pressure/humidity compensation.
+            - Returns temperature in degrees C as a float.
+        """
+
+        # Calculate var1 and var2 as per Bosch's example code:
+
+        # var1 = ((((adc_T>>3) – ((BME280_S32_t)dig_T1<<1))) * ((BME280_S32_t)dig_T2)) >> 11;
+        var1 = (((adc_T >> 3) - (self.dig_T1 << 1)) * self.dig_T2) >> 11
+
+        # var2 = (((((adc_T>>4) – ((BME280_S32_t)dig_T1)) *
+        #   ((adc_T>>4) – ((BME280_S32_t)dig_T1))) >> 12) *
+        #   ((BME280_S32_t)dig_T3)) >> 14;
+        var2 = (((((adc_T >> 4) - self.dig_T1) *
+                ((adc_T >> 4) - self.dig_T1)) >> 12) *
+                self.dig_T3) >> 14
+
+        # Set _t_fine for other functions to use (the "fine resolution" internal temp)
+        self._t_fine = var1 + var2
+
+        # Calculate the actual temperature:
+        #   _t_fine is in 0.01 °C (i.e., 5123 means 51.23 °C)
+        T = (self._t_fine * 5 + 128) >> 8
+
+        # Return as a float in degrees Celsius:
+        return T / 100.0
+
+    def read(self) -> tuple[float, float, float]:
         """
         Returns (temperature_C, pressure_Pa, humidity_percent)
         """
+
+        # Get the raw ADC (Analog to Digital Conversion) values:
         adc_T, adc_P, adc_H = self.read_raw()
-        # TODO: apply compensation formulas from data sheet
-        # Use self.dig_T1, dig_T2, ... to compute true readings
-        return (temperature_C, pressure_Pa, humidity_percent)
+
+        # Compensate the temperature first, as this will update self._t_fine:
+        temperature_C = self._compensate_temperature(adc_T)
+
+        # Compensate pressure and humidity using the updated self._t_fine value:
+        pressure_Pa = self._compensate_pressure(adc_P)
+        humidity_percent = self._compensate_humidity(adc_H)
+
+        return temperature_C, pressure_Pa, humidity_percent
