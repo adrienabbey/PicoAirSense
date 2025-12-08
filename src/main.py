@@ -55,11 +55,10 @@ def main():
         else:
             pressure_hPa = pressure_Pa / 100.0
 
-            print("T = {:6.2f} C   P = {:7.2f} hPa   H = {:5.1f} %RH".format(
-                temperature_c, pressure_hPa, humidity_percent))
-            print("eCO2 = {:4d} ppm   TVOC = {:4d} ppb".format(eco2, tvoc))
+            print("T = {:6.2f} C   P = {:7.2f} hPa   H = {:5.1f} %RH   eCO2 = {:4d} ppm   TVOC = {:4d} ppb".format(
+                temperature_c, pressure_hPa, humidity_percent, eco2, tvoc))
 
-        time.sleep(2)
+        time.sleep(1)
 
 
 if __name__ == "__main__":
