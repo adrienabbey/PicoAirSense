@@ -73,6 +73,8 @@ print(i2c.scan())
 
 ## Third Party Code
 
-- SGP30 driver: lib/adafruit_sgp30.py from the alexmrqt/micropython-sgp30 project, originally based on Adafruit’s CircuitPython SGP30 library by Ladyada (Adafruit Industries), licensed under the MIT License.
+- SGP30 driver: adafruit_sgp30.py from the alexmrqt/micropython-sgp30 project, originally based on Adafruit’s CircuitPython SGP30 library by Ladyada (Adafruit Industries), licensed under the MIT License.
   - <https://github.com/alexmrqt/micropython-sgp30>
   - <https://github.com/adafruit/Adafruit_CircuitPython_SGP30>
+- MicroPython Waveshare e-Paper driver: epaper2in13.py from the mcauser/micropython-waveshare-epaper project, licensed under the MIT License.
+  - <https://github.com/mcauser/micropython-waveshare-epaper>
