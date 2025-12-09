@@ -199,6 +199,137 @@ def maybe_save_sgp30_baseline() -> None:
 
 
 # -----------------------------------------------------------------------------
+# Comfort and air quality classification helpers
+# -----------------------------------------------------------------------------
+
+
+def _comfort_temp_f(rh: float) -> float:
+    """
+    This is my personal comfort line (deg F) calibrated from my personal preferences:
+    - ~73 deg F at ~30% RH (dry winter)
+    - ~69 deg F at ~60% RH (humid summer)
+
+    T_set(deg F) ~= 77 - 0.133 * RH, clamped to [68, 74]
+
+    :param rh: Relative Humidity %
+    :type rh: float
+    :return: Returns an adjusted temperature preference
+    :rtype: float
+    """
+    t = 77.0 - 0.133 * rh
+    if t < 68.0:
+        t = 68.0
+    if t > 74.0:
+        t = 74.0
+    return t
+
+
+def classify_thermal_comfort(temp_c: float, rh: float) -> str:
+    """
+    Classify thermal comfort based on how far the actual temperature in deg F
+    is from my personal humidity-dependent comfort line.
+
+    :param temp_c: Current temperature in deg C
+    :type temp_c: float
+    :param rh: Current relative humidity %
+    :type rh: float
+    :return: A string describing how I likely perceive the current environment.
+    :rtype: str
+    """
+    temp_f = temp_c * 9.0 / 5.0 + 32.0
+    target_f = _comfort_temp_f(rh)
+    diff = temp_f - target_f
+    d = abs(diff)
+
+    if d <= 1.0:
+        label = "Excellent"
+        nuance = ""
+    elif d <= 3.0:
+        label = "Good"
+        nuance = " (slightly warm)" if diff > 0 else " (slightly cool)"
+    elif d <= 5.0:
+        label = "Fair"
+        nuance = " (too warm)" if diff > 0 else " (too cool)"
+    else:
+        label = "Poor"
+        nuance = " (much too warm)" if diff > 0 else " (much too cool)"
+
+    return label + nuance
+
+
+def classify_eco2(eco2_ppm: int) -> tuple[int, str]:
+    """
+    Classify eCO2 in ppm into a qualitative air quality band.
+    Returns (index, label) where higher index = worse air.
+
+    :param eco2_ppm: Current eCO2 in ppm
+    :type eco2_ppm: int
+    :return: Index value (0 to 4), string description
+    :rtype: tuple[int, str]
+    """
+
+    # Clamp unrealistic low values to nominal outdoor baseline:
+    if eco2_ppm < 400:
+        eco2_ppm = 400
+
+    if eco2_ppm < 700:
+        return 0, "Excellent"
+    elif eco2_ppm < 1000:
+        return 1, "Good"
+    elif eco2_ppm < 1400:
+        return 2, "Fair"
+    elif eco2_ppm < 2000:
+        return 3, "Poor"
+    else:
+        return 4, "Very Poor"
+
+
+def classify_tvoc(tvoc_ppb: int) -> tuple[int, str]:
+    """
+    Classify TVOC in ppb into a qualitative air quality band.
+    Returns (index, label) where higher index = worse air.
+
+    :param tvoc_ppb: Current TVOC in ppb
+    :type tvoc_ppb: int
+    :return: Index value (0 to 4), description
+    :rtype: tuple[int, str]
+    """
+
+    if tvoc_ppb < 150:
+        return 0, "Excellent"
+    elif tvoc_ppb < 500:
+        return 1, "Good"
+    elif tvoc_ppb < 1000:
+        return 2, "Moderate"
+    elif tvoc_ppb < 3000:
+        return 3, "High"
+    else:
+        return 4, "Very High"
+
+
+def classify_air_quality(eco2_ppm: int, tvoc_ppb: int) -> tuple[str, str, str]:
+    """
+    Combine eCO2 and TVOC classes into an overall air quality rating.
+
+    :param eco2_ppm: Current eCO2 in ppm
+    :type eco2_ppm: int
+    :param tvoc_ppb: Current TVOC in ppb
+    :type tvoc_ppb: int
+    :return: Overall quality description, eCO2 description, TVOC description
+    :rtype: tuple[str, str, str]
+    """
+
+    eco2_index, eco2_label = classify_eco2(eco2_ppm)
+    tvoc_index, tvoc_label = classify_tvoc(tvoc_ppb)
+
+    overall_index = eco2_index if eco2_index >= tvoc_index else tvoc_index
+    overall_labels = ("Excellent", "Good", "Moderate", "Poor", "Very Poor")
+    overall_label = overall_labels[overall_index]
+
+    return overall_label, eco2_label, tvoc_label
+
+
+# -----------------------------------------------------------------------------
 # Measurement helpers (for REPL and main loop)
 # -----------------------------------------------------------------------------
 
@@ -234,9 +365,16 @@ def print_environment() -> None:
     temperature_c, pressure_pa, humidity_percent, eco2, tvoc = read_environment()
     pressure_hpa = pressure_pa / 100.0
 
+    # Classify current conditions:
+    thermal_label = classify_thermal_comfort(temperature_c, humidity_percent)
+    overall_air, eco2_label, tvoc_label = classify_air_quality(eco2, tvoc)
+
     # Print the formatted sensor values.  NOTE: This will go to the REPL terminal:
     print("T = {:6.2f} C   P = {:7.2f} hPa   H = {:5.1f} %RH   eCO2 = {:4d} ppm   TVOC = {:4d} ppb".format(
         temperature_c, pressure_hpa, humidity_percent, eco2, tvoc))
+    # Print the human-friendly comfort and air quality summary:
+    print("Comfort: {:s}   Air quality: {:s}   (eCO2: {:s}, TVOC: {:s})".format(
+        thermal_label, overall_air, eco2_label, tvoc_label))
 
 
 def run_continuous() -> None:
