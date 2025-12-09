@@ -19,7 +19,7 @@ import adafruit_sgp30
 
 SGP30_BASELINE_FILE = "sgp30_baseline.txt"
 # Save the baseline file at most once per hour to limit flash wear:
-SGP30_BASELINE_SAVE_INTERNAL = 3600  # seconds
+SGP30_BASELINE_SAVE_INTERVAL = 3600  # seconds
 
 # Globals for REPL access
 i2c = None
@@ -143,9 +143,9 @@ def load_sgp30_baseline() -> bool:
 
         return True
 
-    except OSError:
+    except (OSError, RuntimeError) as error_code:
         # No file yet, or filesystem issue:
-        print("No stored SGP30 baseline found; starting with factory baseline.")
+        print("No usable SGP30 baseline found; starting with factory baseline.", error_code)
         return False
 
     except ValueError:
@@ -191,7 +191,7 @@ def maybe_save_sgp30_baseline() -> None:
         return
 
     # Check if it's time to update the baseline:
-    if now - _last_baseline_save >= SGP30_BASELINE_SAVE_INTERNAL:
+    if now - _last_baseline_save >= SGP30_BASELINE_SAVE_INTERVAL:
         try:
             save_sgp30_baseline()
         except OSError as error_code:
