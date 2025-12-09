@@ -373,7 +373,7 @@ def print_environment() -> None:
     print("T = {:6.2f} C   P = {:7.2f} hPa   H = {:5.1f} %RH   eCO2 = {:4d} ppm   TVOC = {:4d} ppb".format(
         temperature_c, pressure_hpa, humidity_percent, eco2, tvoc))
     # Print the human-friendly comfort and air quality summary:
-    print("Comfort: {:s}   Air quality: {:s}   (eCO2: {:s}, TVOC: {:s})".format(
+    print("   Comfort: {:<20}   Air quality: {:<11}   eCO2: {:<11}  TVOC: {:<11}".format(
         thermal_label, overall_air, eco2_label, tvoc_label))
 
 
