@@ -27,6 +27,10 @@ bme = None
 sgp = None
 _last_baseline_save = 0.0
 
+# Temperature calibration offset (deg C) for display/comfort.
+# Negative value means the sensor reads too hot and we lower it.
+TEMP_CAL_OFFSET_C = -2.0    # adjust this after comparing with a reference
+
 
 # -----------------------------------------------------------------------------
 # Initialization Helpers
@@ -347,13 +351,16 @@ def read_environment() -> tuple[float, float, float, int, int]:
         raise RuntimeError("Sensors are not initialized; call main() first.")
 
     # Read the BME280 first:
-    temperature_c, pressure_pa, humidity_percent = bme.read()
+    raw_temperature_c, pressure_pa, humidity_percent = bme.read()
 
     # Use the temp/RH to compensate the SGP30 readings:
-    sgp.set_iaq_rel_humidity(humidity_percent, temperature_c)
+    sgp.set_iaq_rel_humidity(humidity_percent, raw_temperature_c)
     eco2, tvoc = sgp.iaq_measure()  # type: ignore
 
-    return temperature_c, pressure_pa, humidity_percent, eco2, tvoc
+    # Apply calibration offset for display/comfort purposes:
+    cal_temperature_c = raw_temperature_c + TEMP_CAL_OFFSET_C
+
+    return cal_temperature_c, pressure_pa, humidity_percent, eco2, tvoc
 
 
 def print_environment() -> None:
