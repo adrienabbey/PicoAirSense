@@ -135,6 +135,9 @@ def init_sgp30(bus: I2C | None = None) -> adafruit_sgp30.Adafruit_SGP30:
 
 
 def init_epd() -> None:
+    """
+    Initialize the Waveshare 2.13" e-ink display and prepare a framebuffer.
+    """
     global epd, _epd_buf, _epd_fb, _last_epd_refresh
 
     if not ENABLE_EPD:
@@ -429,6 +432,30 @@ def read_environment() -> tuple[float, float, float, int, int]:
     cal_temperature_c = raw_temperature_c + TEMP_CAL_OFFSET_C
 
     return cal_temperature_c, pressure_pa, humidity_percent, eco2, tvoc
+
+
+def _first_word(label: str) -> str:
+    # "Excellent (slightly warm)" -> "Excellent"
+    return label.split(" ", 1)[0]
+
+
+def _abbr(label: str) -> str:
+    # Keep abbreviations short for the small screen:
+    mapping = {
+        "Excellent": "Excl",
+        "Moderate": "Mod",
+        "Very": "Very",  # handled below
+        "Poor": "Poor",
+        "Good": "Good",
+        "Fair": "Fair",
+        "High": "High",
+    }
+    if label == "Very Poor":
+        return "VPr"
+    if label == "Very High":
+        return "VHi"
+    # Return the mapped string, else the first four characters:
+    return mapping.get(label, label[:4])
 
 
 def print_environment() -> None:
