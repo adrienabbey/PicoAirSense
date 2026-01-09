@@ -8,10 +8,12 @@
 # - Persists SGP30 IAQ baseline to internal flash
 # - Exposes helper functions for REPL use
 
-from machine import Pin, I2C  # type: ignore
+from machine import Pin, I2C, SPI  # type: ignore
 import time
+import framebuf
 from bme280 import BME280
 import adafruit_sgp30
+import epaper2in13
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -30,6 +32,33 @@ _last_baseline_save = 0.0
 # Temperature calibration offset (deg C) for display/comfort.
 # Negative value means the sensor reads too hot and we lower it.
 TEMP_CAL_OFFSET_C = -2.0    # adjust this after comparing with a reference
+
+
+# ---- E-ink (Waveshare 2.13" B/W, driver epaper2in13.py) ---------------------
+
+ENABLE_EPD = True
+
+# SPI bus and pins, adjust as needed:
+
+EPD_SPI_ID = 1
+EPD_SCK_PIN = 10
+EPD_MOSI_PIN = 11
+EPD_CS_PIN = 9
+EPD_DC_PIN = 8
+EPD_RST_PIN = 12
+EPD_BUSY_PIN = 13
+
+# Conservative SPI speed for reliability, may adjust later:
+EPD_BAUDRATE = 2_000_000
+
+# E-ink refresh is slow, don't try for every second:
+EPD_REFRESH_INTERVAL = 10   # second
+
+# EPD globals
+epd = None
+_epd_buf = None
+_epd_fb = None
+_last_epd_refresh = 0.0
 
 
 # -----------------------------------------------------------------------------
@@ -103,6 +132,45 @@ def init_sgp30(bus: I2C | None = None) -> adafruit_sgp30.Adafruit_SGP30:
     print("SGP30 serial:", [hex(x) for x in sgp.serial])  # type: ignore
 
     return sgp
+
+
+def init_epd() -> None:
+    global epd, _epd_buf, _epd_fb, _last_epd_refresh
+
+    if not ENABLE_EPD:
+        return
+
+    spi = SPI(
+        EPD_SPI_ID,
+        baudrate=EPD_BAUDRATE,
+        polarity=0,
+        phase=0,
+        sck=Pin(EPD_SCK_PIN),
+        mosi=Pin(EPD_MOSI_PIN),
+        miso=Pin(12),  # unused by most EPD boards; safe placeholder
+    )
+
+    cs = Pin(EPD_CS_PIN, Pin.OUT)
+    dc = Pin(EPD_DC_PIN, Pin.OUT)
+    rst = Pin(EPD_RST_PIN, Pin.OUT)
+    busy = Pin(EPD_BUSY_PIN, Pin.OUT)
+
+    epd = epaper2in13.EPD(spi, cs, dc, rst, busy)
+    epd.init()
+
+    # Allocate a bitmap buffer and bind a FrameBuffer for text rendering.
+    # Size = width * height / 8 (1 bit per pixel)
+    _epd_buf = bytearray(epd.width * epd.height // 8)
+    _epd_fb = framebuf.FrameBuffer(
+        _epd_buf, epd.width, epd.height, framebuf.MONO_HLSB)
+
+    # Clear once at startup:
+    _epd_fb.fill(1)  # 1 = white (usually)
+    epd.set_frame_memory(_epd_buf, 0, 0, epd.width, epd.height)
+    epd.display_frame()
+
+    _last_epd_refresh = time.time()
+    print("EPD initialized ({}x{}).".format(epd.width, epd.height))
 
 
 # -----------------------------------------------------------------------------
